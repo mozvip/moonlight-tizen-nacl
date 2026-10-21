@@ -561,16 +561,17 @@ function showApps(host) {
         document.querySelector('#game-grid').appendChild(gameCard);
         // apply CSS stylization to indicate whether the app is active
         stylizeBoxArt(host, app.id);
+
+        var img = new Image();
+        img.onload = e => img.classList.add('fade-in');
+        host.getBoxArt(app.id).then(function (resolvedPromise) {
+          img.src = resolvedPromise;
+        }, function (failedPromise) {
+          console.log('%c[index.js, showApps]', 'color: green;', 'Error! Failed to retrieve box art for app ID: ' + app.id + '. Returned value was: ' + failedPromise, '\n Host object:', host, host.toString());
+          img.src = 'static/res/placeholder_error.svg'
+        });
+        gameCard.appendChild(img);
       }
-      var img = new Image();
-      host.getBoxArt(app.id).then(function (resolvedPromise) {
-        img.src = resolvedPromise;
-      }, function (failedPromise) {
-        console.log('%c[index.js, showApps]', 'color: green;', 'Error! Failed to retrieve box art for app ID: ' + app.id + '. Returned value was: ' + failedPromise, '\n Host object:', host, host.toString());
-        img.src = 'static/res/placeholder_error.svg'
-      });
-      img.onload = e => img.classList.add('fade-in');
-      $(gameCard).append(img);
     });
   }, function (failedAppList) {
     $('#naclSpinner').hide();

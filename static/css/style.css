@@ -187,10 +187,10 @@ main {
     min-height: 170px;
     margin: 15px;
     cursor: pointer;
-    transition: all .2s ease-in-out;
-    will-change: transform;
+    transition: transform .15s ease-in-out;
 }
 #host-grid .mdl-card:hover, #host-grid .mdl-card:focus, #host-grid .mdl-card:active, #game-grid .mdl-card:focus, #game-grid .mdl-card:active {
+    will-change: transform;
     transform: scale(1.15);
     outline : #00A3C6 solid 2px;;
 }

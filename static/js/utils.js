@@ -1,3 +1,90 @@
+// Box art is downscaled once to roughly the size it is displayed at, and kept in
+// IndexedDB, so later visits don't re-download and re-decode full-size PNGs.
+var BoxArtCache = {
+  maxSize: 300,
+  maxConcurrent: 3,
+  memory: {},
+  _active: 0,
+  _queue: [],
+
+  schedule: function (task) {
+    return new Promise((resolve, reject) => {
+      this._queue.push({ task: task, resolve: resolve, reject: reject });
+      this._next();
+    });
+  },
+
+  _next: function () {
+    while (this._active < this.maxConcurrent && this._queue.length > 0) {
+      var item = this._queue.shift();
+      this._active++;
+      item.task().then(item.resolve, item.reject).then(() => {
+        this._active--;
+        this._next();
+      });
+    }
+  },
+
+  downscale: function (buffer) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(new Blob([buffer], { type: 'image/png' }));
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var scale = Math.min(1, BoxArtCache.maxSize / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#1d1d1d';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error('Unable to decode box art'));
+      };
+      img.src = url;
+    });
+  },
+
+  _withDb: function (callback) {
+    try {
+      openIndexDB(callback);
+    } catch (e) {
+      callback();
+    }
+  },
+
+  read: function (key) {
+    return new Promise((resolve) => {
+      // openIndexDB never calls back if the database can't be opened
+      var timer = setTimeout(function () { resolve(null); }, 2000);
+      this._withDb(function () {
+        try {
+          var request = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
+          request.onsuccess = function () { clearTimeout(timer); resolve(request.result || null); };
+          request.onerror = function () { clearTimeout(timer); resolve(null); };
+        } catch (e) {
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+    });
+  },
+
+  write: function (key, dataUrl) {
+    this._withDb(function () {
+      try {
+        db.transaction(storeName, 'readwrite').objectStore(storeName).put(dataUrl, key);
+      } catch (e) {
+        console.warn('Unable to cache box art', e);
+      }
+    });
+  }
+};
+
 function runningOnChrome() {
   try {
       if (chrome) {
@@ -418,72 +505,38 @@ NvHTTP.prototype = {
   // returns the box art of the given appID.
   // three layers of response time are possible: memory cached (in javascript), storage cached (in chrome.storage.local), and streamed (host sends binary over the network)
   getBoxArt: function (appId) {
-    // if (chrome.storage) {
-    //   // This may be bad practice to push/pull this much data through local storage?
-    //   return new Promise(function(resolve, reject) {
-    //     chrome.storage.local.get('boxart-' + appId, function(storageData) {
-    //       // if we already have it, load it.
-    //       if (storageData !== undefined && Object.keys(storageData).length !== 0 && storageData['boxart-' + appId].constructor !== Object) {
-    //         console.log('%c[utils.js, getBoxArt]', 'color: gray;', 'Returning storage-cached box art for app: ', appId);
-    //         resolve(storageData['boxart-' + appId]);
-    //         return;
-    //       }
+    var cacheKey = 'boxart-' + this.serverUid + '-' + appId;
 
-    //       // otherwise, put it in our cache, then return it
-    //       sendMessage('openUrl', [
-    //         this._baseUrlHttps +
-    //         '/appasset?' + this._buildUidStr() +
-    //         '&appid=' + appId +
-    //         '&AssetType=2&AssetIdx=0',
-    //         this.ppkstr,
-    //         true
-    //       ]).then(function(boxArtBuffer) {
-    //         var reader = new FileReader();
-    //         reader.onloadend = function() {
-    //           var obj = {};
-    //           obj['boxart-' + appId] = this.result;
-    //           chrome.storage.local.set(obj, function(onSuccess) {});
-    //           console.log('%c[utils.js, utils.js,  getBoxArt]', 'color: gray;', 'Returning network-fetched box art');
-    //           resolve(this.result);
-    //         }
-    //         reader.readAsDataURL(new Blob([boxArtBuffer], {
-    //           type: "image/png"
-    //         }));
-    //       }.bind(this), function(error) {
-    //         console.error('%c[utils.js, utils.js,  getBoxArt]', 'color: gray;', 'Box-art request failed!', error);
-    //         reject(error);
-    //         return;
-    //       }.bind(this));
-    //     }.bind(this));
-    //   }.bind(this));
+    if (BoxArtCache.memory[cacheKey]) {
+      return BoxArtCache.memory[cacheKey];
+    }
 
-    // } else { // shouldn't run because we always have chrome.storage, but I'm not going to antagonize other browsers
-    console.warn('%c[utils.js, utils.js,  getBoxArt]', 'color: gray;', 'chrome.storage not detected! Box art will not be saved!');
-    return new Promise((resolve, reject) => {
-      sendMessage('openUrl', [
-        this._baseUrlHttps +
-        '/appasset?' + this._buildUidStr() +
-        '&appid=' + appId +
-        '&AssetType=2&AssetIdx=0',
-        this.ppkstr,
-        true
-      ]).then((boxArtBuffer) => {
-        var reader = new FileReader();
-        reader.onloadend = function () {
-          var obj = {};
-          obj['boxart-' + appId] = this.result;
-          console.log('%c[utils.js, utils.js,  getBoxArt]', 'color: gray;', 'Returning network-fetched box art');
-          resolve(this.result);
-        }
-        reader.readAsDataURL(new Blob([boxArtBuffer], {
-          type: "image/png"
-        }));
-      }, (error) => {
-        console.error('%c[utils.js, utils.js,  getBoxArt]', 'color: gray;', 'Box-art request failed!', error);
-        reject(error);
-        return;
+    var fetchBoxArt = () => sendMessage('openUrl', [
+      this._baseUrlHttps +
+      '/appasset?' + this._buildUidStr() +
+      '&appid=' + appId +
+      '&AssetType=2&AssetIdx=0',
+      this.ppkstr,
+      true
+    ]).then(BoxArtCache.downscale);
+
+    var promise = BoxArtCache.read(cacheKey).then(function (cached) {
+      if (cached) {
+        return cached;
+      }
+      return BoxArtCache.schedule(fetchBoxArt).then(function (dataUrl) {
+        BoxArtCache.write(cacheKey, dataUrl);
+        return dataUrl;
       });
     });
+
+    promise.catch(function (error) {
+      console.error('%c[utils.js, getBoxArt]', 'color: gray;', 'Box-art request failed!', error);
+      delete BoxArtCache.memory[cacheKey];
+    });
+
+    BoxArtCache.memory[cacheKey] = promise;
+    return promise;
   },
 
   launchApp: function(appId, mode, sops, rikey, rikeyid, localAudio, surroundAudioInfo, gamepadMask) {
