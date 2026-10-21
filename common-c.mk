@@ -1,11 +1,13 @@
 COMMON_C_DIR := moonlight-common-c/src
 ENET_DIR := moonlight-common-c/enet
-RS_DIR := moonlight-common-c/reedsolomon
+RS_DIR := moonlight-common-c/nanors
 
 RS_SOURCE := \
-	$(RS_DIR)/rs.c \
+	$(RS_DIR)/rs.c                       \
+	$(RS_DIR)/deps/obl/oblas_common.c   \
+	$(RS_DIR)/deps/obl/oblas_lite.c     \
 
-RS_INCLUDE := $(RS_DIR)
+RS_INCLUDE := $(RS_DIR) $(RS_DIR)/deps $(RS_DIR)/deps/obl
 
 ENET_SOURCE := \
     $(ENET_DIR)/callbacks.c \

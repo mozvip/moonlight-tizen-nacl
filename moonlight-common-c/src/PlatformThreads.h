@@ -12,15 +12,6 @@ typedef struct _PLT_THREAD {
     HANDLE handle;
     bool cancelled;
 } PLT_THREAD;
-#elif defined(__vita__)
-typedef int PLT_MUTEX;
-typedef int PLT_COND;
-typedef struct _PLT_THREAD {
-    int handle;
-    int cancelled;
-    void *context;
-    bool alive;
-} PLT_THREAD;
 #elif defined(__WIIU__)
 typedef OSFastMutex PLT_MUTEX;
 typedef OSFastCondition PLT_COND;
@@ -62,10 +53,10 @@ void PltLockMutex(PLT_MUTEX* mutex);
 void PltUnlockMutex(PLT_MUTEX* mutex);
 
 int PltCreateThread(const char* name, ThreadEntry entry, void* context, PLT_THREAD* thread);
-void PltCloseThread(PLT_THREAD* thread);
 void PltInterruptThread(PLT_THREAD* thread);
 bool PltIsThreadInterrupted(PLT_THREAD* thread);
 void PltJoinThread(PLT_THREAD* thread);
+void PltDetachThread(PLT_THREAD* thread);
 
 int PltCreateEvent(PLT_EVENT* event);
 void PltCloseEvent(PLT_EVENT* event);
