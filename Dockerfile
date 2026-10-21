@@ -29,8 +29,16 @@ RUN wget -nv -O web-cli_Tizen_Studio_5.6_ubuntu-64.bin 'https://download.tizen.o
 	rm web-cli_Tizen_Studio_5.6_ubuntu-64.bin
 ENV PATH=/home/moonlight/tizen-studio/tools/ide/bin:/home/moonlight/tizen-studio/tools:${PATH}
 
-# Prepare Tizen signing cerficates
-RUN tizen certificate -a Moonlight -f Moonlight -p 1234 && \
+# Prepare Tizen signing cerficates.
+# A TV only accepts an in-place update (keeping the app data, e.g. pairing) if the package is
+# signed with the same author certificate as the installed one. Put it in .signing/Moonlight.p12
+# (password 1234) to reuse it across builds; otherwise a new one is generated.
+RUN mkdir -p /home/moonlight/tizen-studio-data/keystore/author
+COPY --chown=moonlight .signing/Moonlight.p1[2] /home/moonlight/tizen-studio-data/keystore/author/
+RUN if [ ! -f /home/moonlight/tizen-studio-data/keystore/author/Moonlight.p12 ]; then \
+		echo "WARNING: no .signing/Moonlight.p12, generating a new author certificate"; \
+		tizen certificate -a Moonlight -f Moonlight -p 1234; \
+	fi && \
 	tizen security-profiles add -n Moonlight -a /home/moonlight/tizen-studio-data/keystore/author/Moonlight.p12 -p 1234
 
 # Workaround to package applications without gnome-keyring
